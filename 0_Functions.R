@@ -203,3 +203,90 @@ life.table <- function(mx){
                     Tx = Tx, ex = ex))
 }
 
+
+
+tidy.svyVGAM <- function(
+    x, 
+    conf.int = FALSE, 
+    conf.level = 0.95,
+    exponentiate = FALSE, 
+    ...
+){
+  # Replace `summary(x)$coefficients` with `summary(x)$coeftable`
+  ret <- as_tibble(summary(x)$coeftable, rownames = "term")
+  
+  # All of this stays the same:
+  colnames(ret) <- c("term", "estimate", "std.error", "statistic", "p.value")
+  coefs <- tibble::enframe(stats::coef(x), name = "term", value = "estimate")
+  ret <- left_join(coefs, ret, by = c("term", "estimate"))
+  if (conf.int){
+    ci <- broom:::broom_confint_terms(x, level = conf.level, ...)
+    ret <- dplyr::left_join(ret, ci, by = "term")
+  }
+  if (exponentiate){ret <- broom:::exponentiate(ret)}
+  
+  # This part only works for the multinomial case, and only if your covariates
+  # have no ":" in their names - NOT FOR GENERAL USE
+  ret %>% 
+    separate(term, into = c("term", "y.level"), sep = ":") %>% 
+    arrange(y.level) %>% 
+    relocate(y.level, .before = term)
+}
+
+
+library(showtext)
+
+font_add(
+  family = "cabrito", 
+  regular = "../../fonts/cabritosansnormregular-webfont.ttf"
+)
+showtext_auto()
+
+theme_pma <- function(title, subtitle = NULL, x = NULL, legend.position){
+  components <- list(
+    theme_minimal() %+replace% 
+      theme(
+        text = element_text(family = "cabrito", size = 14), 
+        plot.title = element_text(
+          size = 14, color = "#00263A", margin = margin(b = 10)
+        ), 
+        plot.subtitle = element_text(
+          size = 12, color = "#00263A", margin = margin(b = 5)
+        ),
+        legend.title = element_blank(),        
+        legend.position = legend.position,
+        strip.text.y = element_text(size = 14, angle = 0),
+        panel.spacing = unit(2, "lines")
+      ),
+    scale_fill_manual(
+      values = alpha(
+        colour =  c(
+          "#00263A",   # IPUMS Navy
+          "#7A99AC",   # IPUMS Blue Grey
+          "#BDD2DE",   # IPUMS Medium Grey
+          "#98579B",   # PMA Pink
+          "#CCBA72",   # Tan
+          "#81A88D"    # Green
+        )
+      ),
+      na.value = "#F0E6F0"
+    ),
+    scale_color_manual(
+      values = alpha(
+        alpha = .85,   # .85 creates bars that are 15% transparent
+        colour = c(
+          "#98579B",   # PMA Pink
+          "#00263A"    # IPUMS Navy
+        )
+      )
+    ),
+    labs(
+      title = toupper(title), 
+      subtitle = subtitle, 
+      x = x, 
+      y = NULL, 
+      fill = NULL
+    ),
+    guides(fill = guide_legend(reverse = TRUE, byrow = TRUE))
+  )
+}

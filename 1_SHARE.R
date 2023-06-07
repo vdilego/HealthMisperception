@@ -53,9 +53,9 @@ share$wave<-as.character(share$wave)
 share$wave<-as.numeric(share$wave)
 
 df1<-share %>% 
-  mutate(year = case_when(wave ==1 ~ '2004',
-                          wave ==2 ~ '2007',
-                          TRUE ~ 'NA'))%>% 
+ # mutate(year = case_when(wave ==1 ~ '2004',
+#                          wave ==2 ~ '2007',
+#                          TRUE ~ 'NA'))%>% 
  # mutate(across(everything(), ~replace(., . ==  -999 , NA))) %>%
  # mutate(across( .cols  = c(12:15),.fns =  ~replace(., . ==  -444 , "unable")))%>% 
   #mutate(across( .cols  = c(12:15),.fns =  ~replace(., . ==  -99 , "unsafe"))) %>% 
@@ -141,7 +141,7 @@ wlk_share<-df3 %>%
                                      TRUE ~ NA_real_ ))
 
 ## all missings are missings
-wlk_share2<-df3 %>% 
+wlk_share<-df3 %>% 
   mutate(wlk_impair=case_when( (walk_speed > 0.4) ~ 0,
                                (walk_speed <=0.4) ~ 1,
                                TRUE ~ NA_real_ ),
@@ -314,7 +314,7 @@ fig1<-ggplot(prop_healthy_wlk,
   scale_color_manual(values = c('#009988','#882255')) 
 
 
-
+fig1
 # saving this data as .csv file but you can change it if you prefer later
 
 write.table(prop_healthy_wlk, here("Data","SHARE","share_walk_pooled.csv"), sep = ",", col.names = NA,

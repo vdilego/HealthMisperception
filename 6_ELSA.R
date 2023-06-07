@@ -1,5 +1,5 @@
 #-----------------------------------------------------------#
-# Data prep for HRS   --------------------------------------#
+# Data prep for ELSA   --------------------------------------#
 # Author: Vanessa di Lego  #
 #-----------------------------------------------------------#
 
@@ -21,6 +21,16 @@ library(likert)
 library(flextable)
 library(naniar)
 
+# For ELSA WE use Version G.2 incorporates the latest released version of ELSA data, which includes eleven main modules and 
+# the associated datasets, and adds variables and observations from Wave 9. It contains 19,802 observations. 
+# It also adds new variables and makes adjustments and corrections.
+# However, we only select ELSA Core Members living in private households in England (at the time of interview), which have been
+# given a person-level weight. Cross-sectional interviewer weights are “system missing” for ELSA Partners, and set to zero 
+# for all Core Members not eligible toreceive a weight (institutional respondents or those living outside of England). 
+# Instructions from the official ELSA manual is to exclude these respondents (with zero or ‘system missing’ weights) 
+# After deleting all those cases, we have a sample size of ..#
+
+
 # Loading useful functions into environment
 source(here("0_Functions.R"))
 options(scipen=999)
@@ -30,41 +40,35 @@ figs.folder <- here("Manuscript","Figures")
 dat.folder <- here("Manuscript","Data")
 figs.app.folder <- here("Appendix","Figures")
 
-# We are using the Harmonized version C HRS: 42,233 observations. This is a new updated version C,
-# until 2019 that was updated now in 2022. 
-# It is a Respondent level file so each row represents a unique Respondent. 
-#
-# Reading HRS for all years
-# Here the number after the HRS data call is the latest date where data was retrived and updated from mycomputer
+# ELSA
 
+elsa <- read_dta(here("Data","walk_elsa.dta")) %>% 
+  filter(!is.na(rcwtresp)) %>% 
+  filter(rcwtresp>0) 
 
-hrs <- read_dta(here("Data","walk_hrs13.dta")) %>% 
-filter(!is.na(rwtresp)) %>% 
-  filter(rwtresp>0) 
+elsa<-as_factor(elsa)                         # transform all using as_factor from haven    
+elsa$walkcomp<-as.character(elsa$walkcomp)
+elsa$walkaid<-as.character(elsa$walkaid)
+elsa$wave<-as.character(elsa$wave)
+elsa$wave<-as.numeric(elsa$wave)
 
-
-hrs<-as_factor(hrs)                         # transform all using as_factor from haven    
-hrs$walkcomp<-as.character(hrs$walkcomp)
-hrs$walkaid<-as.character(hrs$walkaid)
-hrs$wave<-as.character(hrs$wave)
-hrs$wave<-as.numeric(hrs$wave)
-
-df1<-hrs %>% 
+df1<-elsa %>% 
   filter(!is.na(walkspeed1)) %>% 
-  unlabelled()
+  unlabelled() %>% 
+  filter(ragey>=65)
 
-df2<-cSplit(df1, splitCols = c(3,8:10,13,14), ".")  # split the cols because of stata labels 
+df2<-cSplit(df1, splitCols = c(8:11,14,15), ".")  # split the cols because of stata labels 
 
 df3<-df2 %>% 
   mutate(rwspeed1=as.numeric(rwspeed1),
          rwspeed2=as.numeric(rwspeed2),
          speed_avg=(rwspeed1+rwspeed2)/2,
          walk_speed=(2.5/speed_avg)) %>% 
-  arrange(hhidpn, wave) %>% 
-  mutate(age_cat=cut(ragey_e, breaks = c(seq(65,80,5), 85, Inf),
+  arrange(idauniq, wave) %>% 
+  mutate(age_cat=cut(ragey, breaks = c(seq(65,80,5), 85, Inf),
                      labels = c("65-70","70-75", "75-80","80-85","85+"), right=F)) %>% 
-  droplevels() %>% 
-  filter(walk_speed<3)
+  droplevels() #%>% 
+
 
 
 # let´s have a look at the missing values. The doctor diagnosed disease is actually pretty robust,
@@ -72,21 +76,17 @@ df3<-df2 %>%
 
 plot_missy<-df3 %>%
   # Select the survey items
-  select(c("speed_avg",  "rwalk1_1","rwalkra_1")) %>%
+  select(c("speed_avg",  "rwalk100a")) %>%
   # Create an UpSet plot
   gg_miss_upset(., nsets = 10 )
 
 
 
-pdf(here(figs.app.folder,"missing_share_walk.pdf"))
-plot_missy
-dev.off()
-
 
 # check all variables  by gender:
-pdf(here(figs.app.folder,"missing_share_gender.pdf"))
+#pdf(here(figs.app.folder,"missing_share_gender.pdf"))
 gg_miss_var(df3, ragender_2, show_pct = T)
-dev.off()
+#dev.off()
 
 # -----------------------------------------------------------------------------------------------------
 # Construct a new variable for the cutoff difficulties in walking: 0.4 m/s, see Studenski et al 2011 and
@@ -98,78 +98,68 @@ dev.off()
 
 # first considering all the missings as impaired:
 
-wlk_hrs<-df3 %>% 
+wlk_elsa<-df3 %>% 
   mutate(wlk_impair=case_when( (walk_speed >= 0.4) ~ 0,
-                               (walk_speed <0.4) ~ 1,
-                               (rwalk1_1 == 2 & rwalk1_1 ==9) ~ 1,
+                               (walk_speed <0.4 |walkspeed1 == -444 ) ~ 1,
                                TRUE ~ NA_real_ ),
-        
+         
          wlk_agree_room= case_when((rwalkra_1 == 0 & wlk_impair ==0) ~ 0,
                                    (rwalkra_1 == 1 & wlk_impair ==1) ~ 0,
                                    (rwalkra_1 == 0 & wlk_impair ==1) ~ 1,
                                    (rwalkra_1 == 1 & wlk_impair ==0) ~ 2,
                                    TRUE ~ NA_real_ ),
          
-         wlk_agree_100m= case_when((rwalk1_1 == 0 & wlk_impair ==0) ~ 0,
-                                   (rwalk1_1 == 1 & wlk_impair ==1) ~ 0,
-                                   (rwalk1_1 == 0 & wlk_impair ==1) ~ 1,
-                                   (rwalk1_1 == 1 & wlk_impair ==0) ~ 2,
+         wlk_agree_100m= case_when((rwalk100a_1 == 0 & wlk_impair ==0) ~ 0,
+                                   (rwalk100a_1 == 1 & wlk_impair ==1) ~ 0,
+                                   (rwalk100a_1 == 0 & wlk_impair ==1) ~ 1,
+                                   (rwalk100a_1 == 1 & wlk_impair ==0) ~ 2,
                                    TRUE ~ NA_real_ ))
 
+wlk_elsa$ragender_2<-as.factor(wlk_elsa$ragender_2)
 
-wlk_hrs$ragender_2<-as.factor(wlk_hrs$ragender_2)
-
-wlk_hrs$ragender_2<-fct_recode(wlk_hrs$ragender_2,woman = "female", man = "male")
-
-wlk_hrs$ragender_2<-fct_relevel(wlk_hrs$ragender_2,"man")
-
-# converting to survey data to account for weights. SHARE provides individual-level or household weights 
-# that account for non-response adjustment (rwtresp) and sample design weights.
-# design_wgt is the sample design weight, to guarantee representiveness and
-# account for non-response issues. rwtresp is the person-level analysis weight. SHARE uses a multistage
-# stratified sample. We stratify by country - even though we can do pooled analysis as well.
+# converting to survey data to account for weights. LASI provides individual-level or household weights 
+# that account for non-response adjustment (rwtresp), and no weights to account for complex
+# survey design .
 
 options(survey.adjust.domain.lonely=TRUE)
 options(survey.lonely.psu="adjust")
 
 
-speed_hrs_surv <- svydesign( 
-  ids =  ~raehsamp,
-  strata= ~raestrat,
-  weights = ~rwtresp,
+speed_elsa_surv <- svydesign( 
+  ids = ~rclust,  
+  weights = ~rcwtresp,
+  strata= ~rstrat,
   nest = T, 
-  data = subset(wlk_hrs, rwtresp > 0 & ragey_e>=65))            
-
+  data = subset(wlk_elsa, rcwtresp > 0 & ragey>=65))    
 
 #All selected respondents who are not age-eligible are assigned 0 as the weight.
 
 
 
-summary(speed_hrs_surv)
+summary(speed_elsa_surv)
 
 # differences between weighted and unweighted when estimating proportions 
 
-prop.table(table(wlk_hrs$ragender_2))                        #non-weighted
-prop.table(table(wlk_hrs$age_cat))      
-prop.table(svytable(~ragender_2, design=speed_hrs_surv))    #weighted
-prop.table(svytable(~age_cat, design=speed_hrs_surv))
+prop.table(table(wlk_elsa$ragender_2))                        #non-weighted
+prop.table(table(wlk_elsa$age_cat))      
+prop.table(svytable(~ragender_2, design=speed_elsa_surv))    #weighted
+prop.table(svytable(~age_cat, design=speed_elsa_surv))
 
 # Now accounting for more than one variable
-
-prop.table(svytable(~wlk_impair+age_cat, design=speed_hrs_surv))
+svytable(~wlk_impair+age_cat+ragender_2, design=speed_elsa_surv)
 
 prop.healthy_wlk<-svyby(formula = ~wlk_impair, by = ~age_cat, 
-                        design = speed_hrs_surv, FUN = svymean,vartype=c("ci"),
+                        design = speed_elsa_surv, FUN = svymean,
                         na.rm = TRUE, prop_method = c("likelihood"))
+
 
 # table with summary statistics
 
-speed_hrs_surv %>% 
+speed_elsa_surv %>% 
   tbl_svysummary(
     # Use include to select variables
     by= age_cat,
-    include = c(ragey_e, raeducl_2,walk_speed, rwalk1_1,rwalkra_1, wlk_impair,wlk_agree_room,wlk_agree_100m, ragender_2,
-                walkaid),
+    include = c(wlk_agree_room,wlk_agree_100m, ragender_2),
     statistic = list(all_continuous()  ~ "{mean} ({sd})",
                      all_categorical() ~ "{n}    ({p}%)"),
     digits = list( all_categorical() ~ c(0, 1)),
@@ -178,13 +168,15 @@ speed_hrs_surv %>%
   add_p() %>% # comparing values by "both" column
   add_overall() %>%
   modify_caption("Weighted descriptive statistics") %>%
-  bold_labels() %>% # uncomment here to save in the file the table. 
+  bold_labels()  %>% # uncomment here to save in the file the table. 
 as_flex_table() %>%
-  YesSiR::exportxlsx(path = here("decriptive_hrs.xlsx"))
- # flextable::save_as_docx(path=here("decriptive_hrs.docx"))
+  YesSiR::exportxlsx(path = here("decriptive_elsa.xlsx"))
 
 #remotes::install_github("Sebastien-Le/YesSiR")
 library(YesSiR)
+
+
+
 
 #-----------------------------------------------------------------------------------#
 # Pooled countries analysis
@@ -198,7 +190,7 @@ library(YesSiR)
 
 
 prop_healthy_wlk<-svyby(formula = ~wlk_impair, by = ~age_cat+ragender_2, 
-                        design = speed_hrs_surv, FUN = svymean,vartype=c("ci"),
+                        design = speed_elsa_surv, FUN = svymean,vartype=c("ci"),
                         na.rm = TRUE, prop_method = c("likelihood"))
 
 prop_healthy_wlk<-as.data.frame(prop_healthy_wlk)
@@ -239,14 +231,14 @@ fig1
 
 # now if it is the reported
 
-prop_healthy_wlk2<-svyby(formula = ~rwalk1_1, by = ~age_cat+ragender_2, 
-                        design = speed_hrs_surv, FUN = svymean,vartype=c("ci"),
-                        na.rm = TRUE, prop_method = c("likelihood"))
+prop_healthy_wlk2<-svyby(formula = ~rwalk100a_1, by = ~age_cat+ragender_2, 
+                         design = speed_elsa_surv, FUN = svymean,vartype=c("ci"),
+                         na.rm = TRUE, prop_method = c("likelihood"))
 
 prop_healthy_wlk2<-as.data.frame(prop_healthy_wlk2)
 
 colnames(prop_healthy_wlk2)<-c("age","gender","Impair","CI_low",
-                              "CI_up")
+                               "CI_up")
 
 
 
@@ -264,10 +256,10 @@ fig2<-ggplot(prop_healthy_wlk2,
   geom_line(size=1)+
   geom_point(size=2.7, alpha=0.7)+
   geom_line(data=prop_healthy_wlk2,aes(age, CI_low, 
-                                      group=gender,color=gender), size=0.3, linetype="dashed")+
+                                       group=gender,color=gender), size=0.3, linetype="dashed")+
   
   geom_line(data=prop_healthy_wlk2,aes(age, CI_up, 
-                                      group=gender,color=gender), size=0.3, linetype="dashed")+
+                                       group=gender,color=gender), size=0.3, linetype="dashed")+
   theme_clean(base_size = 16)+
   theme(legend.position = "bottom", legend.background = element_rect(color = NA))+
   ylab("Prevalence Unhealthy")+
@@ -278,21 +270,16 @@ fig2<-ggplot(prop_healthy_wlk2,
 
 fig2
 
-
-
-
 # now if it is the walk across the room
 
 prop_healthy_wlk3<-svyby(formula = ~rwalkra_1, by = ~age_cat+ragender_2, 
-                         design = speed_hrs_surv, FUN = svymean,vartype=c("ci"),
+                         design = speed_elsa_surv, FUN = svymean,vartype=c("ci"),
                          na.rm = TRUE, prop_method = c("likelihood"))
 
 prop_healthy_wlk3<-as.data.frame(prop_healthy_wlk3)
 
 colnames(prop_healthy_wlk3)<-c("age","gender","Impair","CI_low",
                                "CI_up")
-
-
 
 
 
@@ -341,27 +328,16 @@ fig4<-ggplot(p_all,
                            group=gender,color=gender, shape=gender), size=0.3, linetype="dashed")+
   
   geom_line(data=p_all,aes(age, CI_up, 
-                                       group=gender,color=gender, shape=gender), size=0.3, linetype="dashed")+
+                           group=gender,color=gender, shape=gender), size=0.3, linetype="dashed")+
   theme_clean(base_size = 16)+
   theme(legend.position = "bottom", legend.background = element_rect(color = NA))+
   ylab("Prevalence Unhealthy")+
-   facet_grid(.~type)+
+  facet_grid(.~type)+
   #  scale_x_discrete(labels = c(50,55,60,65,70,75,80,85,90))+
   #scale_color_manual(values = c("brown","darkblue"))+
   scale_color_manual(values = c('#009988','#882255')) 
 
-X11()
 fig4
-
-
-
-
-# saving this data as .csv file but you can change it if you prefer later
-
-write.table(p_all, here("Data","HRS","tested_reported_all_hrs.csv"), sep = ",", col.names = NA,
-            qmethod = "double")
-
-
 
 # putting them into perspective
 
@@ -379,24 +355,57 @@ fig5<-ggplot(p_all,
   theme(legend.position = "bottom", legend.background = element_rect(color = NA))+
   ylab("Prevalence Unhealthy")+
   facet_grid(.~gender)
-#  scale_x_discrete(labels = c(50,55,60,65,70,75,80,85,90))+
-#scale_color_manual(values = c("brown","darkblue"))+
-# scale_color_manual(values = c('#009988','#882255')) 
+  #  scale_x_discrete(labels = c(50,55,60,65,70,75,80,85,90))+
+  #scale_color_manual(values = c("brown","darkblue"))+
+ # scale_color_manual(values = c('#009988','#882255')) 
 
 fig5
+
+
+
+
+# saving this data as .csv file but you can change it if you prefer later
+
+write.table(p_all, here("Data","ELSA","tested_reported_all_elsa.csv"), sep = ",", col.names = NA,
+            qmethod = "double")
+
+
+
+# comparing the concordance
+
+wlk_elsa %>% 
+  select(idauniq,wlk_agree_room, wlk_agree_100m) %>% 
+  pivot_longer(!idauniq) %>% 
+  mutate(
+    name = if_else(name == "wlk_agree_room", "Walk across a room", "Walk 100m") %>% 
+      as_factor() %>% 
+      fct_rev(),
+    value = value %>% 
+      
+      as_factor() %>% 
+      fct_recode(
+        "Concordance" = "0", "Overstimate" = "1", "Underestimate" = "2"
+      ) %>% 
+      fct_rev()
+  )# %>%
+  mutate(id=)
+   ggplot(aes(x = name, y = idauniq, alluvium = idauniq, 
+           fill = name, stratum = name)) +
+  geom_alluvium() +
+  geom_stratum()
 
 # some models
 library(ggeffects)
 library(svyVGAM)
 
-mod1<-svyglm(as.numeric(wlk_impair)~age_cat+ragender_2, design= speed_hrs_surv)
+mod1<-svyglm(as.numeric(wlk_impair)~age_cat+ragender_2, design= speed_elsa_surv)
 summary(mod1)
 
 
 mod_1<-ggeffect(mod1, terms = c("age_cat", "ragender_2"))  %>%
   plot() 
 
-mod2<-svyglm(as.numeric(wlk_impair)~age_cat+ragender_2+raeducl_2, design= speed_hrs_surv, family = binomial)
+mod2<-svyglm(as.numeric(wlk_impair)~age_cat+ragender_2+raeducl_2, design= speed_elsa_surv, family = binomial)
 summary(mod2)
 
 
@@ -404,14 +413,8 @@ ggeffect(mod2, terms = c("age_cat", "ragender_2","raeducl_2"))  %>%
   plot() 
 
 
-mod3<-svyglm(as.numeric(rwalkra_1)~age_cat+ragender_2, design= speed_hrs_surv)
 
-ggeffect(mod3, terms = c("age_cat", "ragender_2"))  %>%
-  plot() 
-summary(mod3)
-
-
-mod4<-svyglm(as.numeric(rwalk1_1)~age_cat+ragender_2, design= speed_hrs_surv)
+mod4<-svyglm(as.numeric(rwalk100a_1)~age_cat+ragender_2, design= speed_elsa_surv)
 summary(mod4)
 
 
@@ -427,11 +430,11 @@ library(srvyr)
 library(ggalluvial)  
 library(dotwhisker)  
 
-mod1.mult<-svy_vglm( wlk_agree_room ~ age_cat+ragender_2, design = speed_hrs_surv, family = multinomial(refLevel = "0"))
+mod1.mult<-svy_vglm( wlk_agree_100m ~ age_cat+ragender_2, design = speed_elsa_surv, family = multinomial(refLevel = "0"))
 
-tidy_pma_model1 <- tidy.svyVGAM(mod1.mult, exponentiate = TRUE, conf.int = TRUE)
+tidy_pma_model <- tidy.svyVGAM(mod1.mult, exponentiate = TRUE, conf.int = TRUE)
 
-tidy_pma_model1 %>% 
+tidy_pma_model %>% 
   select(-y.level) %>% 
   rename(Variables = term) %>% 
   mutate(sig = case_when(p.value < 0.001 ~ "***",
@@ -444,7 +447,7 @@ tidy_pma_model1 %>%
 
 # dot whisker plot
 
-tidy_pma_model1 %>% 
+tidy_pma_model %>% 
   mutate(
     model = if_else(
       y.level == 1, 
@@ -465,55 +468,7 @@ tidy_pma_model1 %>%
     line_args = list(size = 4, lwd=8)
   ) + 
   guides(color = guide_legend(reverse = TRUE)) + 
-  theme_minimal(base_size = 12) +
+  theme_minimal(base_size = 18) +
   theme(legend.position="top", 
         legend.title  = element_blank()) +
-  scale_color_manual(values=c("darkblue", "firebrick"))
-
-
-## for 100  eters
-
-mod2.mult<-svy_vglm( wlk_agree_100m ~ age_cat+ragender_2, design = speed_hrs_surv, family = multinomial(refLevel = "0"))
-
-tidy_pma_model2 <- tidy.svyVGAM(mod2.mult, exponentiate = TRUE, conf.int = TRUE)
-
-tidy_pma_model2 %>% 
-  select(-y.level) %>% 
-  rename(Variables = term) %>% 
-  mutate(sig = case_when(p.value < 0.001 ~ "***",
-                         p.value < 0.01 ~ "**",
-                         p.value < 0.05 ~ "*",
-                         T ~ "")) %>% 
-  kbl(digits = 3) %>% 
-  pack_rows("Overestimate", 1, 6) %>% 
-  pack_rows("Underestimate", 7, 12)
-
-# dot whisker plot
-
-tidy_pma_model2 %>% 
-  mutate(
-    model = if_else(
-      y.level == 1, 
-      "Overestimate",
-      "Underestimate", 
-    ),
-    sig = gtools::stars.pval(p.value)
-  ) %>%
-  relabel_predictors(c(
-    `age_cat70-75` = "Age 70-75",
-    `age_cat75-80`= "Age 75-80",
-    `age_cat80-85`= "Age 80-85",
-    `age_cat85+`= "Age > 85",
-    `ragender_2woman` = "Woman")) %>% 
-  dotwhisker::dwplot(
-    dodge_size = 0.1,
-    vline = geom_vline(xintercept = 1, colour = "grey60", linetype = 2),
-    line_args = list(size = 4, lwd=8)
-  ) + 
-  guides(color = guide_legend(reverse = TRUE)) + 
-  theme_minimal(base_size = 12) +
-  theme(legend.position="top", 
-        legend.title  = element_blank()) +
-  scale_color_manual(values=c("darkblue", "firebrick"))
-
-
+  scale_color_manual(values=c("darkblue", "firebrick")) 
